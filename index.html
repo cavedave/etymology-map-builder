@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Etymology Map Builder</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+    th, td { padding: 0.5em; border: 1px solid #ccc; text-align: left; }
+    button { margin-right: 0.5em; }
+    #mapContainer svg { max-width: 100%; height: auto; border: 1px solid #ccc; margin-top: 1em; }
+  </style>
+</head>
+<body>
+    <h1>Europe Etymology Map Builder</h1>
+    <p>
+      Type the word you want to map for each language below (max. 20 characters, Unicode supported). 
+      Leave any field blank to skip that language.
+    </p>
+    <p>
+      When you’re ready, click <strong>Generate Map</strong> to preview your SVG, 
+      then <strong>Download PNG</strong> to save your map.
+    </p>
+  <button id="genSvg">Generate SVG</button>
+  <button id="downloadPng" disabled>Download PNG</button>
+
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th>Language Code</th>
+        <th>Word(s)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- rows are added here by JS -->
+    </tbody>
+  </table>
+
+  <div id="mapContainer"></div>
+  <canvas id="canvas" style="display:none;"></canvas>
+
+  <script>
+    // Map ISO codes → human names
+    const codeToName = {
+      abk:"Abkhaz", ara:"Arabic", aze:"Azerbaijani", bel:"Belarusian",
+      bos:"Bosnian", bre:"Breton", bul:"Bulgarian", cat:"Catalan",
+      cau:"Caucasian", ces:"Czech", cor:"Cornish", cym:"Welsh",
+      dan:"Danish", deu:"German", ell:"Greek", eng:"English",
+      est:"Estonian", eus:"Basque", fao:"Faroese", fin:"Finnish",
+      fra:"French", fry:"Frisian", gag:"Gagauz", gla:"Scottish Gaelic",
+      gle:"Irish", glg:"Galician", hrv:"Croatian", hun:"Hungarian",
+      hye:"Armenian", isl:"Icelandic", ita:"Italian", kat:"Georgian",
+      kaz:"Kazakh", krl:"Karelian", lav:"Latvian", lig:"Ligurian",
+      lit:"Lithuanian", ltz:"Luxembourgish", mkd:"Macedonian", mlt:"Maltese",
+      nap:"Neapolitan", nld:"Dutch", nor:"Norwegian", occ:"Occitan",
+      oss:"Ossetian", pms:"Piedmontese", pol:"Polish", por:"Portuguese",
+      roh:"Romansh", ron:"Romanian", rus:"Russian", sar:"Sardinian",
+      sco:"Scots", sic:"Sicilian", slk:"Slovak", slv:"Slovenian",
+      sme:"Northern Sami", spa:"Spanish", sqi:"Albanian", srp:"Serbian",
+      swe:"Swedish", tat:"Tatar", tur:"Turkish", ukr:"Ukrainian",
+      ven:"Venetian", xal:"Kalmyk"
+    };
+    const SKIP_CODES = ['hye','aze','kat','oss','abk','xal','kaz','tat'];
+
+    let svgTemplateText = '';
+    let codes = [];
+
+    function sanitizeWord(w) {
+  // remove bad chars
+  const cleaned = w.replace(/[^\p{L}\p{M} '\-]/gu, '');
+  // enforce 20-char limit
+  return cleaned.slice(0, 20);
+}
+    // 1) Load the SVG, detect placeholders, build two-column table
+    async function init() {
+      svgTemplateText = await (await fetch('resources/europe_template.svg')).text();
+  
+      // find all $code placeholders in the raw SVG
+// detect all $code placeholders in the raw SVG
+const placeholderRegex = /\$([a-z]{2,4})/gi;
+const set = new Set();
+let m;
+while ((m = placeholderRegex.exec(svgTemplateText)) !== null) {
+  set.add(m[1]);
+}
+// now filter out the ones we don't need
+codes = Array.from(set)
+            .filter(code => !SKIP_CODES.includes(code))
+            .sort();
+console.log('Using language codes:', codes);
+  
+      // build table rows
+      const tbody = document.querySelector('#dataTable tbody');
+      codes.forEach(code => {
+        const name = codeToName[code] || code;
+        const tr = document.createElement('tr');
+        tr.dataset.code = code;
+  
+        const tdName = document.createElement('td');
+        tdName.textContent = name;
+        tr.appendChild(tdName);
+  
+        const tdWord = document.createElement('td');
+        const ipt = document.createElement('input');
+        ipt.type = 'text';
+        ipt.className = 'wordInput';
+        tdWord.appendChild(ipt);
+        tr.appendChild(tdWord);
+  
+        tbody.appendChild(tr);
+      });
+    }
+  
+    // 2) Generate SVG with labels (no color changes)
+    function generateSVG() {
+      // read rows
+      const entries = Array.from(
+        document.querySelectorAll('#dataTable tbody tr')
+      ).map(tr => ({
+        code: tr.dataset.code,
+        //word: tr.querySelector('.wordInput').value.trim().replace(/^\?$/,'')
+        word: sanitizeWord(
+         tr.querySelector('.wordInput').value.trim().replace(/^\?$/,'')
+       )
+      }));
+  
+      const withWord = entries.filter(e => e.word);
+      if (!withWord.length) {
+        alert('Please enter at least one word.');
+        return;
+      }
+  
+      // inject words
+      let svgText = svgTemplateText;
+      withWord.forEach(({code, word}) => {
+        svgText = svgText.replace(new RegExp('\\$'+code,'g'), word);
+      });
+      // clear any leftover placeholders
+      svgText = svgText.replace(/\$[a-z]{2,4}/gi, '');
+  
+      // parse for removal & cropping
+      const doc = new DOMParser().parseFromString(svgText,'image/svg+xml');
+  
+      // remove unwanted east
+      ['rus','ukr','kaz'].forEach(code => {
+        const g = doc.getElementById(code);
+        if (g && g.parentNode) g.parentNode.removeChild(g);
+      });
+  
+      // crop viewBox
+      const svgEl = doc.documentElement;
+      const vb = svgEl.getAttribute('viewBox');
+      if (vb) {
+        let [x,y,w,h] = vb.split(' ').map(Number);
+        const NEW_W = 1060;
+        
+        svgEl.setAttribute('viewBox', `${x} ${y} ${NEW_W} ${h}`);
+        svgEl.setAttribute('width', NEW_W);
+      }
+// ——————————————————————————————————————————
+   // INJECT RUSSIAN LABEL AT CUSTOM POSITION/ANGLE
+   const rusEntry = entries.find(e => e.code === 'rus');
+   if (rusEntry && rusEntry.word) {
+     // create a new <text> node in the SVG namespace
+     const txt = doc.createElementNS(
+       'http://www.w3.org/2000/svg',
+       'text'
+     );
+     // set your desired coords:
+     const X = 930, Y = 388;
+     txt.setAttribute('x', X);
+     txt.setAttribute('y', Y);
+     // rotate around (X,Y) by -30°
+     txt.setAttribute('transform', `rotate(-40 ${X} ${Y})`);
+     // style it:
+     txt.setAttribute('font-family', 'Arial, sans-serif');
+     txt.setAttribute('font-size', '24');
+     txt.setAttribute('fill', '#000');
+     // put in the text
+     txt.textContent = rusEntry.word;
+     // add to the root <svg>
+     svgEl.appendChild(txt);
+   }
+   // ——————————————————————————————————————————
+   // ——————————————————————————————————————————
+// INJECT TURKISH LABEL AT CUSTOM POSITION/ANGLE
+const turEntry = entries.find(e => e.code === 'tur');
+if (turEntry && turEntry.word) {
+  const txt = doc.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'text'
+  );
+  // your desired coords for Turkish
+  const X2 = 1000, Y2 = 1050;
+  txt.setAttribute('x', X2);
+  txt.setAttribute('y', Y2);
+  // rotate around (X2,Y2) by -30°
+  txt.setAttribute('transform', `rotate(-70 ${X2} ${Y2})`);
+  // styling
+  txt.setAttribute('font-family', 'Arial, sans-serif');
+  txt.setAttribute('font-size',   '24');
+  txt.setAttribute('fill',        '#000');
+  // set the label text
+  txt.textContent = turEntry.word;
+  // append into the SVG root
+  svgEl.appendChild(txt);
+}
+
+  // ————————————————————————————————
+  // INJECT WATERMARK / CREDIT in bottom-left
+    const credit = doc.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'text'
+    );
+    // 20px from left, 10px up from bottom
+    const WX =  20;
+    const WY =  1100;
+    credit.setAttribute('x', WX);
+    credit.setAttribute('y', WY);
+    credit.setAttribute('font-family', 'Arial, sans-serif');
+    credit.setAttribute('font-size', '12');           // small text
+    credit.setAttribute('fill', '#000000');            // black
+    credit.setAttribute('fill-opacity', '0.3');        // subtle
+    credit.setAttribute('pointer-events', 'none');     // non-interactive
+    credit.textContent = '@iamreddave';
+    svgEl.appendChild(credit);
+  
+  // ————————————————————————————————
+
+
+      // render
+      document.getElementById('mapContainer').innerHTML =
+        new XMLSerializer().serializeToString(doc);
+      document.getElementById('downloadPng').disabled = false;
+    }
+  
+    // 3) PNG download (unchanged)
+    function downloadPNG() {
+      const svgEl = document.querySelector('#mapContainer svg');
+      const canvas = document.getElementById('canvas');
+      const ctx    = canvas.getContext('2d');
+      const img    = new Image();
+      const data   = new XMLSerializer().serializeToString(svgEl);
+      const blob   = new Blob([data],{type:'image/svg+xml'});
+      const url    = URL.createObjectURL(blob);
+      img.onload = () => {
+        canvas.width  = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img,0,0);
+        URL.revokeObjectURL(url);
+        const png = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = png; a.download='map.png'; a.click();
+      };
+      img.src = url;
+    }
+  
+    // hook up buttons
+    document.getElementById('genSvg').onclick      = generateSVG;
+    document.getElementById('downloadPng').onclick = downloadPNG;
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+  
+  
+   
+  
+</body>
+</html>
