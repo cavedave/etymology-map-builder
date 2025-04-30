@@ -4,3 +4,8 @@
 node_modules/
 .vscode/
 .idea/ 
+
+# Development and backup files
+cropcountry.html
+generateMap_v1.py
+resources/europe_template copy.txt 
