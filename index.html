@@ -18,7 +18,7 @@
       Leave any field blank to skip that language.
     </p>
     <p>
-      When you’re ready, click <strong>Generate Map</strong> to preview your SVG, 
+    When you're ready, click <strong>Generate Map</strong> to preview your SVG,
       then <strong>Download PNG</strong> to save your map.
     </p>
   <button id="genSvg">Generate SVG</button>
@@ -29,6 +29,7 @@
       <tr>
         <th>Language Code</th>
         <th>Word(s)</th>
+        <th>Color</th>
       </tr>
     </thead>
     <tbody>
@@ -76,24 +77,23 @@
       svgTemplateText = await (await fetch('resources/europe_template.svg')).text();
   
       // find all $code placeholders in the raw SVG
-// detect all $code placeholders in the raw SVG
-const placeholderRegex = /\$([a-z]{2,4})/gi;
-const set = new Set();
-let m;
-while ((m = placeholderRegex.exec(svgTemplateText)) !== null) {
-  set.add(m[1]);
-}
-// now filter out the ones we don't need
-codes = Array.from(set)
-            .filter(code => !SKIP_CODES.includes(code))
-            .sort();
-console.log('Using language codes:', codes);
+      const placeholderRegex = /\$([a-z]{2,4})/gi;
+      const set = new Set();
+      let m;
+      while ((m = placeholderRegex.exec(svgTemplateText)) !== null) {
+        set.add(m[1]);
+      }
+      // now filter out the ones we don't need
+      codes = Array.from(set)
+                  .filter(code => !SKIP_CODES.includes(code))
+                  .sort();
+      //console.log('Using language codes:', codes);
   
       // build table rows
       const tbody = document.querySelector('#dataTable tbody');
       codes.forEach(code => {
         const name = codeToName[code] || code;
-        const tr = document.createElement('tr');
+        const tr = document.createElement('tr');  
         tr.dataset.code = code;
   
         const tdName = document.createElement('td');
@@ -106,6 +106,15 @@ console.log('Using language codes:', codes);
         ipt.className = 'wordInput';
         tdWord.appendChild(ipt);
         tr.appendChild(tdWord);
+
+        // Add color picker
+        const tdColor = document.createElement('td');
+        const iptC = document.createElement('input');
+        iptC.type = 'color';
+        iptC.className = 'colorInput';
+        iptC.value = '#cccccc';  // Default color
+        tdColor.appendChild(iptC);
+        tr.appendChild(tdColor);
   
         tbody.appendChild(tr);
       });
@@ -116,37 +125,80 @@ console.log('Using language codes:', codes);
       // read rows
       const entries = Array.from(
         document.querySelectorAll('#dataTable tbody tr')
-      ).map(tr => ({
-        code: tr.dataset.code,
-        //word: tr.querySelector('.wordInput').value.trim().replace(/^\?$/,'')
-        word: sanitizeWord(
-         tr.querySelector('.wordInput').value.trim().replace(/^\?$/,'')
-       )
-      }));
-  
+      ).map(tr => {
+        const raw = tr.querySelector('.wordInput').value.trim();
+        const word = sanitizeWord(raw.replace(/^\?$/,''));
+        const color = tr.querySelector('.colorInput').value;
+        //console.log(`Entry for ${tr.dataset.code}:`, { word, color });  // Debug log
+        return { code: tr.dataset.code, word, color };
+      });
+
       const withWord = entries.filter(e => e.word);
       if (!withWord.length) {
         alert('Please enter at least one word.');
         return;
       }
   
-      // inject words
+      // Map of language codes to their original colors in the template
+      const languageColors = {
+        'abk': '168d4f', 'ara': 'ffffb1', 'aze': 'd45500', 'bel': 'b5ff64',
+        'bos': 'abc837', 'bre': '178df0', 'bul': '36ae22', 'cat': '00ffff',
+        'cau': 'd38d5f', 'ces': '00cb60', 'cor': 'c0003c', 'cym': 'ff7f29',
+        'dan': 'ff5555', 'deu': 'd09999', 'ell': 'ffff00', 'eng': 'ffaaaa',
+        'est': 'b7c8be', 'eus': 'ffd42a', 'fao': 'ff0000', 'fin': '6f997a',
+        'fra': '53bbb5', 'fry': 'd66c74', 'gag': 'c837ab', 'gla': 'ff7f2a',
+        'gle': 'fd6d3c', 'glg': '00d4aa', 'hrv': 'abc837', 'hun': 'ac9d93',
+        'hye': '008080', 'isl': 'f19076', 'ita': '7bafe0', 'kat': 'f4e3d7',
+        'kaz': 'deaa87', 'krl': '93ac93', 'lav': 'de87cd', 'lit': 'e9afdd',
+        'lig': 'f2003c', 'ltz': '55ddff', 'mkd': '71c837', 'mlt': 'a0892c',
+        'nap': 'f5003c', 'nld': 'f4d7d7', 'nor': 'ff8080', 'occ': '168d5f',
+        'oss': '985fd3', 'pms': 'f2d53c', 'pol': '7ecb60', 'por': '00d4d4',
+        'roh': '008079', 'ron': 'aaccff', 'rus': '72ff00', 'sar': 'c0ee3c',
+        'sco': '168df0', 'sic': 'cc003c', 'slk': '42f460', 'slv': '81c98d',
+        'sme': 'cccccc', 'spa': 'acd8ed', 'sqi': 'a0856c', 'srp': 'abc837',
+        'swe': 'ffb380', 'tat': 'c7a25f', 'tur': 'cc9e4c', 'ven': 'f28d3c',
+        'xal': 'd34d5f', 'ukr': 'c1ff00'
+      };
+
+      // Apply colors to countries
+      // console.log('Starting to apply colors...');
+      
+      // First, replace the text placeholders
       let svgText = svgTemplateText;
-      withWord.forEach(({code, word}) => {
-        svgText = svgText.replace(new RegExp('\\$'+code,'g'), word);
+      entries.forEach(entry => {
+          if (entry.word) {
+              svgText = svgText.replace(new RegExp('\\$'+entry.code,'g'), entry.word);
+          }
       });
-      // clear any leftover placeholders
+      
+      // Clear any leftover placeholders
       svgText = svgText.replace(/\$[a-z]{2,4}/gi, '');
-  
-      // parse for removal & cropping
-      const doc = new DOMParser().parseFromString(svgText,'image/svg+xml');
-  
+      
+      // Then apply colors using text replacement
+      entries.forEach(entry => {
+          if (entry.word) {
+              const originalColor = languageColors[entry.code];
+              if (originalColor) {
+                  // Remove the # from the new color
+                  const newColor = entry.color.substring(1);
+                  // Replace the original color with the new one
+                  svgText = svgText.replace(new RegExp('#'+originalColor, 'g'), '#'+newColor);
+                  // console.log(`Replacing color for ${entry.code}: #${originalColor} -> #${newColor}`);
+              } else {
+                  // console.log(`No original color found for ${entry.code}`);
+              }
+          }
+      });
+      
+      // Parse the modified SVG text
+      const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+      
       // remove unwanted east
       ['rus','ukr','kaz'].forEach(code => {
         const g = doc.getElementById(code);
         if (g && g.parentNode) g.parentNode.removeChild(g);
       });
-  
+
       // crop viewBox
       const svgEl = doc.documentElement;
       const vb = svgEl.getAttribute('viewBox');
@@ -157,77 +209,71 @@ console.log('Using language codes:', codes);
         svgEl.setAttribute('viewBox', `${x} ${y} ${NEW_W} ${h}`);
         svgEl.setAttribute('width', NEW_W);
       }
-// ——————————————————————————————————————————
-   // INJECT RUSSIAN LABEL AT CUSTOM POSITION/ANGLE
-   const rusEntry = entries.find(e => e.code === 'rus');
-   if (rusEntry && rusEntry.word) {
-     // create a new <text> node in the SVG namespace
-     const txt = doc.createElementNS(
-       'http://www.w3.org/2000/svg',
-       'text'
-     );
-     // set your desired coords:
-     const X = 930, Y = 388;
-     txt.setAttribute('x', X);
-     txt.setAttribute('y', Y);
-     // rotate around (X,Y) by -30°
-     txt.setAttribute('transform', `rotate(-40 ${X} ${Y})`);
-     // style it:
-     txt.setAttribute('font-family', 'Arial, sans-serif');
-     txt.setAttribute('font-size', '24');
-     txt.setAttribute('fill', '#000');
-     // put in the text
-     txt.textContent = rusEntry.word;
-     // add to the root <svg>
-     svgEl.appendChild(txt);
-   }
-   // ——————————————————————————————————————————
-   // ——————————————————————————————————————————
-// INJECT TURKISH LABEL AT CUSTOM POSITION/ANGLE
-const turEntry = entries.find(e => e.code === 'tur');
-if (turEntry && turEntry.word) {
-  const txt = doc.createElementNS(
-    'http://www.w3.org/2000/svg',
-    'text'
-  );
-  // your desired coords for Turkish
-  const X2 = 1000, Y2 = 1050;
-  txt.setAttribute('x', X2);
-  txt.setAttribute('y', Y2);
-  // rotate around (X2,Y2) by -30°
-  txt.setAttribute('transform', `rotate(-70 ${X2} ${Y2})`);
-  // styling
-  txt.setAttribute('font-family', 'Arial, sans-serif');
-  txt.setAttribute('font-size',   '24');
-  txt.setAttribute('fill',        '#000');
-  // set the label text
-  txt.textContent = turEntry.word;
-  // append into the SVG root
-  svgEl.appendChild(txt);
-}
 
-  // ————————————————————————————————
-  // INJECT WATERMARK / CREDIT in bottom-left
-    const credit = doc.createElementNS(
-      'http://www.w3.org/2000/svg',
-      'text'
-    );
-    // 20px from left, 10px up from bottom
-    const WX =  20;
-    const WY =  1100;
-    credit.setAttribute('x', WX);
-    credit.setAttribute('y', WY);
-    credit.setAttribute('font-family', 'Arial, sans-serif');
-    credit.setAttribute('font-size', '12');           // small text
-    credit.setAttribute('fill', '#000000');            // black
-    credit.setAttribute('fill-opacity', '0.3');        // subtle
-    credit.setAttribute('pointer-events', 'none');     // non-interactive
-    credit.textContent = '@iamreddave';
-    svgEl.appendChild(credit);
-  
-  // ————————————————————————————————
+      // INJECT RUSSIAN LABEL AT CUSTOM POSITION/ANGLE
+      const rusEntry = entries.find(e => e.code === 'rus');
+      if (rusEntry && rusEntry.word) {
+        const txt = doc.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'text'
+        );
+        // set your desired coords:
+        const X = 930, Y = 388;
+        txt.setAttribute('x', X);
+        txt.setAttribute('y', Y);
+        // rotate around (X,Y) by -40°
+        txt.setAttribute('transform', `rotate(-40 ${X} ${Y})`);
+        // style it:
+        txt.setAttribute('font-family', 'Arial, sans-serif');
+        txt.setAttribute('font-size', '24');
+        txt.setAttribute('fill', '#000');
+        // put in the text
+        txt.textContent = rusEntry.word;
+        // add to the root <svg>
+        svgEl.appendChild(txt);
+      }
 
+      // INJECT TURKISH LABEL AT CUSTOM POSITION/ANGLE
+      const turEntry = entries.find(e => e.code === 'tur');
+      if (turEntry && turEntry.word) {
+        const txt = doc.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'text'
+        );
+        // your desired coords for Turkish
+        const X2 = 1000, Y2 = 1050;
+        txt.setAttribute('x', X2);
+        txt.setAttribute('y', Y2);
+        // rotate around (X2,Y2) by -70°
+        txt.setAttribute('transform', `rotate(-70 ${X2} ${Y2})`);
+        // styling
+        txt.setAttribute('font-family', 'Arial, sans-serif');
+        txt.setAttribute('font-size', '24');
+        txt.setAttribute('fill', '#000');
+        // set the label text
+        txt.textContent = turEntry.word;
+        // append into the SVG root
+        svgEl.appendChild(txt);
+      }
 
+      // INJECT WATERMARK / CREDIT in bottom-left
+      const credit = doc.createElementNS(
+        'http://www.w3.org/2000/svg',
+        'text'
+      );
+      // 20px from left, 10px up from bottom
+      const WX = 20;
+      const WY = 1100;
+      credit.setAttribute('x', WX);
+      credit.setAttribute('y', WY);
+      credit.setAttribute('font-family', 'Arial, sans-serif');
+      credit.setAttribute('font-size', '12');           // small text
+      credit.setAttribute('fill', '#000000');            // black
+      credit.setAttribute('fill-opacity', '0.3');        // subtle
+      credit.setAttribute('pointer-events', 'none');     // non-interactive
+      credit.textContent = '@iamreddave';
+      svgEl.appendChild(credit);
+      
       // render
       document.getElementById('mapContainer').innerHTML =
         new XMLSerializer().serializeToString(doc);
